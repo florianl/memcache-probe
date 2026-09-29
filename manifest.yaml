@@ -1,0 +1,27 @@
+dist:
+  module: github.com/florianl/memcache-probe/dist
+  name: otelcol-memcache-probe
+  description: OpenTelemetry Collector with the memcache probe extension bundled in.
+  version: dev
+  output_path: ./dist
+
+extensions:
+  - gomod: github.com/florianl/memcache-probe v0.0.0
+    import: github.com/florianl/memcache-probe/memcache
+    path: .
+
+receivers:
+  - gomod: go.opentelemetry.io/ebpf-profiler v0.0.202637-0.20260929133537-3b7aabb63d24
+    import: go.opentelemetry.io/ebpf-profiler/collector
+
+exporters:
+  - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.162.0
+  - gomod: go.opentelemetry.io/collector/exporter/otlpexporter v0.162.0
+
+providers:
+  - gomod: go.opentelemetry.io/collector/confmap/provider/envprovider v1.68.0
+  - gomod: go.opentelemetry.io/collector/confmap/provider/fileprovider v1.68.0
+  - gomod: go.opentelemetry.io/collector/confmap/provider/yamlprovider v1.68.0
+
+replaces:
+  - go.opentelemetry.io/ebpf-profiler => /home/flo/go/src/github.com/open-telemetry/opentelemetry-ebpf-profiler

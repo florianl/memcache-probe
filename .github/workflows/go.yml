@@ -1,0 +1,52 @@
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ '**' ]
+
+permissions: read-all
+
+name: Go
+jobs:
+  unit-tests:
+    name: unit tests
+    strategy:
+      matrix:
+        os: [ubuntu-26.04, ubuntu-26.04-arm, windows-latest, macos-latest]
+        go-version: ['oldstable', 'stable']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Clone code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache-dependency-path: go.sum
+          check-latest: true
+      - name: test
+        run: |
+          make test
+
+  code-base:
+    name: code base
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Clone code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: lint
+        run: |
+          make lint
+      - name: vulncheck
+        run: |
+          make vulncheck
+      - name: fmt
+        run: |
+          make fmt
+          git diff --exit-code
+
