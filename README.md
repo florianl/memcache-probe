@@ -27,7 +27,6 @@ Enable the extension and reference it from the `profiling` receiver:
 extensions:
   memcache:
     event: [L1-dcache-load-misses]  # like perf record -e
-    count: 1048576                  # like perf record -c
 
 receivers:
   profiling:
@@ -53,7 +52,7 @@ The options follow `perf record`:
 | Option  | perf | Description |
 |---------|------|-------------|
 | `event` | `-e` | One or more of `L1-dcache-loads`, `L1-dcache-load-misses`, `L1-dcache-stores`, `L1-dcache-store-misses`, `LLC-loads`, `LLC-load-misses`, `LLC-stores`, `LLC-store-misses`. Each event is exported as its own profile. |
-| `count` | `-c` | Sample every N events. Defaults to 1048576 (2^20). |
+| `count` | `-c` | Sample every N events. Defaults to 1048576 (4096 << 8 = 2^20), at most 2^48. |
 | `freq`  | `-F` | Sample at this frequency in Hz. Can not be combined with `count`. |
 
 The values shown above are the defaults. Only user space is sampled, as with
