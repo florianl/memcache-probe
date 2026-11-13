@@ -44,15 +44,9 @@ struct bpf_perf_event_data {
 	__u64 addr;
 };
 
-struct {
-    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-    __uint(key_size, sizeof(__u32));
-    __uint(value_size, sizeof(int));
-} l1d_read_miss SEC(".maps");
-
 SEC("perf_event")
 int read_perf_event_hook(struct bpf_perf_event_data *ctx) {
-    // Every overflow of the counter stands for sample_period cache misses.
+    // Every overflow of the counter stands for sample_period cache events.
     // The counter itself is a running total for the whole CPU and must not be
     // reported as the value of a single sample.
     __u64 normalized = ctx->sample_period;
@@ -60,14 +54,15 @@ int read_perf_event_hook(struct bpf_perf_event_data *ctx) {
     // val.enabled -> Total time event was enabled (ns)
     // val.running -> Total time event was actually on CPU (ns)
     struct bpf_perf_event_value val = {};
-    int ret = bpf_perf_event_read_value(&l1d_read_miss, BPF_F_CURRENT_CPU, &val, sizeof(val));
+    // Reads the perf event that triggered this program.
+    int ret = bpf_perf_prog_read_value(ctx, &val, sizeof(val));
     if (ret == 0 && val.running > 0) {
         normalized = normalized * (val.enabled / val.running);
     }
 
     __u32 key = 0;
     bpf_map_update_elem(&memcache_value, &key, &normalized, BPF_ANY);
-    bpf_printk("L1D miss sample: normalized=%llu (period=%llu)", normalized, ctx->sample_period);
+    bpf_printk("cache event sample: normalized=%llu (period=%llu)", normalized, ctx->sample_period);
     bpf_tail_call(ctx, &memcache_trampoline, 0);
     return 0;
 }

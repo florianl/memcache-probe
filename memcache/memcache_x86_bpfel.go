@@ -16,7 +16,6 @@ import (
 //
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
-	memcacheMapL1dReadMiss        = "l1d_read_miss"
 	memcacheMapMemcacheTrampoline = "memcache_trampoline"
 	memcacheMapMemcacheValue      = "memcache_value"
 	memcacheProgReadPerfEventHook = "read_perf_event_hook"
@@ -71,7 +70,6 @@ type memcacheProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type memcacheMapSpecs struct {
-	L1dReadMiss        *ebpf.MapSpec `ebpf:"l1d_read_miss"`
 	MemcacheTrampoline *ebpf.MapSpec `ebpf:"memcache_trampoline"`
 	MemcacheValue      *ebpf.MapSpec `ebpf:"memcache_value"`
 }
@@ -102,14 +100,12 @@ func (o *memcacheObjects) Close() error {
 //
 // It can be passed to loadMemcacheObjects or ebpf.CollectionSpec.LoadAndAssign.
 type memcacheMaps struct {
-	L1dReadMiss        *ebpf.Map `ebpf:"l1d_read_miss"`
 	MemcacheTrampoline *ebpf.Map `ebpf:"memcache_trampoline"`
 	MemcacheValue      *ebpf.Map `ebpf:"memcache_value"`
 }
 
 func (m *memcacheMaps) Close() error {
 	return _MemcacheClose(
-		m.L1dReadMiss,
 		m.MemcacheTrampoline,
 		m.MemcacheValue,
 	)
