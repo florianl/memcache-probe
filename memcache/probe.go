@@ -1,3 +1,5 @@
+//go:build linux && (amd64 || arm64)
+
 // Package memcache provides a OTel eBPF profiler extension probe to profile
 // memory cache hits and misses.
 package memcache
