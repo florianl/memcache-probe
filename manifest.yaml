@@ -11,7 +11,7 @@ extensions:
     path: .
 
 receivers:
-  - gomod: go.opentelemetry.io/ebpf-profiler v0.0.202637-0.20260929133537-3b7aabb63d24
+  - gomod: go.opentelemetry.io/ebpf-profiler v0.0.202645
     import: go.opentelemetry.io/ebpf-profiler/collector
 
 exporters:
@@ -22,6 +22,3 @@ providers:
   - gomod: go.opentelemetry.io/collector/confmap/provider/envprovider v1.68.0
   - gomod: go.opentelemetry.io/collector/confmap/provider/fileprovider v1.68.0
   - gomod: go.opentelemetry.io/collector/confmap/provider/yamlprovider v1.68.0
-
-replaces:
-  - go.opentelemetry.io/ebpf-profiler => /home/flo/go/src/github.com/open-telemetry/opentelemetry-ebpf-profiler
