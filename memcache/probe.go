@@ -70,12 +70,17 @@ func (mc *memcacheProbe) Load(ctx context.Context, reg tracer.ProbeRegistrar, pr
 			Freq:          freq,
 		},
 	}
+
+	var period int64
+	if !freq {
+		period = int64(sample)
+	}
 	for _, ev := range mc.cfg.cacheEvents() {
 		ep := &eventProbe{}
 		// Track the event right away so Unload releases it on any failure.
 		mc.probes = append(mc.probes, ep)
 
-		if err := ep.load(probeCtx, ev, attr, cpus); err != nil {
+		if err := ep.load(probeCtx, ev, attr, period, cpus); err != nil {
 			return fmt.Errorf("event %s: %w", ev.name, err)
 		}
 	}
@@ -83,9 +88,13 @@ func (mc *memcacheProbe) Load(ctx context.Context, reg tracer.ProbeRegistrar, pr
 	return nil
 }
 
-func (ep *eventProbe) load(probeCtx *tracer.ProbeContext, ev cacheEvent, attr perf.Attr, cpus []int) error {
+func (ep *eventProbe) load(probeCtx *tracer.ProbeContext, ev cacheEvent, attr perf.Attr, period int64, cpus []int) error {
+	sampleType := samples.SampleType{Type: ev.name, Unit: "count"}
+	if period > 0 {
+		sampleType.Period = &samples.Period{Type: ev.name, Unit: "count", Value: period}
+	}
 	ref, err := probeCtx.RegisterCollectTrampoline(&samples.TypeMetadata{
-		SampleTypes:  []samples.SampleType{{Type: ev.name, Unit: "count"}},
+		SampleTypes:  []samples.SampleType{sampleType},
 		ReportValues: true,
 		AppendValues: samples.AppendFirstContextValue,
 	}, tracer.ProbePerfEvent)
