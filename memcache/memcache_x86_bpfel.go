@@ -8,14 +8,24 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
+	"structs"
 
 	"github.com/cilium/ebpf"
 )
+
+type memcacheMuxWindow struct {
+	_           structs.HostLayout
+	PrevEnabled uint64
+	PrevRunning uint64
+	CurEnabled  uint64
+	CurRunning  uint64
+}
 
 // Names of all BPF objects in the ELF.
 //
 // Used for safe lookups in a Collection or CollectionSpec.
 const (
+	memcacheMapMemcacheMux        = "memcache_mux"
 	memcacheMapMemcacheTrampoline = "memcache_trampoline"
 	memcacheMapMemcacheValue      = "memcache_value"
 	memcacheProgReadPerfEventHook = "read_perf_event_hook"
@@ -70,6 +80,7 @@ type memcacheProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type memcacheMapSpecs struct {
+	MemcacheMux        *ebpf.MapSpec `ebpf:"memcache_mux"`
 	MemcacheTrampoline *ebpf.MapSpec `ebpf:"memcache_trampoline"`
 	MemcacheValue      *ebpf.MapSpec `ebpf:"memcache_value"`
 }
@@ -100,12 +111,14 @@ func (o *memcacheObjects) Close() error {
 //
 // It can be passed to loadMemcacheObjects or ebpf.CollectionSpec.LoadAndAssign.
 type memcacheMaps struct {
+	MemcacheMux        *ebpf.Map `ebpf:"memcache_mux"`
 	MemcacheTrampoline *ebpf.Map `ebpf:"memcache_trampoline"`
 	MemcacheValue      *ebpf.Map `ebpf:"memcache_value"`
 }
 
 func (m *memcacheMaps) Close() error {
 	return _MemcacheClose(
+		m.MemcacheMux,
 		m.MemcacheTrampoline,
 		m.MemcacheValue,
 	)
