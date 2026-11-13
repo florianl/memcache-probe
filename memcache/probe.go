@@ -4,6 +4,7 @@ package memcache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"unsafe"
 
@@ -48,7 +49,15 @@ func (mc *memcacheProbe) Shutdown(_ context.Context) error {
 	return nil
 }
 
-func (mc *memcacheProbe) Load(ctx context.Context, reg tracer.ProbeRegistrar, probeCtx *tracer.ProbeContext) error {
+func (mc *memcacheProbe) Load(ctx context.Context, reg tracer.ProbeRegistrar, probeCtx *tracer.ProbeContext) (retErr error) {
+	// The profiler does not call Unload if Load fails, so release everything
+	// that was acquired up to the point of failure.
+	defer func() {
+		if retErr != nil {
+			retErr = errors.Join(retErr, mc.Unload())
+		}
+	}()
+
 	ref, err := probeCtx.RegisterCollectTrampoline(&samples.TypeMetadata{
 		SampleTypes:  []samples.SampleType{{Type: "events", Unit: "count"}},
 		ReportValues: true,
@@ -57,22 +66,21 @@ func (mc *memcacheProbe) Load(ctx context.Context, reg tracer.ProbeRegistrar, pr
 	if err != nil {
 		return err
 	}
+	mc.ref = ref
 
 	spec, err := loadMemcache()
 	if err != nil {
-		ref.Close()
 		return err
 	}
 
 	tailCallMap, err := cebpf.NewMap(spec.Maps[memcacheMapMemcacheTrampoline])
 	if err != nil {
-		ref.Close()
 		return err
 	}
+	// The collection works on its own clone of the map.
+	defer tailCallMap.Close()
 
 	if err := ref.InsertInto(tailCallMap, 0); err != nil {
-		tailCallMap.Close()
-		ref.Close()
 		return err
 	}
 
@@ -83,12 +91,9 @@ func (mc *memcacheProbe) Load(ctx context.Context, reg tracer.ProbeRegistrar, pr
 		},
 	})
 	if err != nil {
-		tailCallMap.Close()
-		ref.Close()
 		return err
 	}
 	mc.coll = coll
-	mc.ref = ref
 
 	cpus, err := getOnlineCPUIDs()
 	if err != nil {
@@ -112,27 +117,27 @@ func (mc *memcacheProbe) Load(ctx context.Context, reg tracer.ProbeRegistrar, pr
 	for _, cpu := range cpus {
 		perfEvent, err := perf.Open(attr, perf.AllThreads, cpu, nil)
 		if err != nil {
-			return fmt.Errorf("failed to open perf event on CPU %d: %v", cpu, err)
+			return fmt.Errorf("failed to open perf event on CPU %d: %w", cpu, err)
 		}
+		// Track the event right away so Unload closes it on any later failure.
+		mc.events = append(mc.events, perfEvent)
 
 		if err := perfEvent.SetBPF(progFD); err != nil {
-			return fmt.Errorf("failed to attach eBPF program to perf event: %v", err)
+			return fmt.Errorf("failed to attach eBPF program to perf event: %w", err)
 		}
 
 		eventFD, err := perfEvent.FD()
 		if err != nil {
-			return fmt.Errorf("getting FD failed: %v", err)
+			return fmt.Errorf("getting FD failed: %w", err)
 		}
 
 		if err := eventsMap.Update(unsafe.Pointer(&cpu), unsafe.Pointer(&eventFD), cebpf.UpdateAny); err != nil {
-			return fmt.Errorf("map update failed: %v", err)
+			return fmt.Errorf("map update failed: %w", err)
 		}
 
 		if err := perfEvent.Enable(); err != nil {
-			return fmt.Errorf("failed to enable perf event on CPU %d: %v", cpu, err)
+			return fmt.Errorf("failed to enable perf event on CPU %d: %w", cpu, err)
 		}
-
-		mc.events = append(mc.events, perfEvent)
 	}
 
 	return nil
@@ -143,12 +148,16 @@ func (mc *memcacheProbe) Unload() error {
 		ev.Disable()
 		ev.Close()
 	}
+	mc.events = nil
 
 	if mc.coll != nil {
 		mc.coll.Close()
+		mc.coll = nil
 	}
 	if mc.ref != nil {
-		return mc.ref.Close()
+		err := mc.ref.Close()
+		mc.ref = nil
+		return err
 	}
 
 	return nil
