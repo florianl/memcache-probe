@@ -25,6 +25,11 @@ const (
 // 4096 << 8 = 2^20 = 1048576, so one sample stands for about a million events.
 const defaultCount = 4096 << 8
 
+// maxCount is the largest accepted sample period. Sample values are reported
+// as int64, and the period of a sample is scaled up for the time the event
+// was multiplexed off the PMU. The limit leaves 15 bits of headroom for that.
+const maxCount = 1 << 48
+
 // Supported events, named as in `perf list`.
 var supportedEvents = []cacheEvent{
 	{"L1-dcache-loads", makeCacheConfig(perfHWCacheL1D, perfHWCacheOpRead, perfHWCacheResultAccess)},
@@ -84,6 +89,9 @@ func (c *Config) Validate() error {
 			errs = append(errs, fmt.Errorf("memcache: event %q is listed more than once", ev))
 		}
 		seen[name] = struct{}{}
+	}
+	if c.Count > maxCount {
+		errs = append(errs, fmt.Errorf("memcache: count %d exceeds the maximum of %d", c.Count, uint64(maxCount)))
 	}
 	if c.Count != 0 && c.Freq != 0 {
 		errs = append(errs, errors.New("memcache: count and freq can not be used together"))
