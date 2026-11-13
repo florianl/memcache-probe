@@ -15,7 +15,7 @@ import (
 func NewFactory() extension.Factory {
 	return extension.NewFactory(
 		Type,
-		func() component.Config { return &Config{} },
+		func() component.Config { return createDefaultConfig() },
 		func(_ context.Context, _ extension.Settings, _ component.Config) (extension.Extension, error) {
 			return nil, errors.New("memcache extension is only supported on Linux amd64/arm64")
 		},

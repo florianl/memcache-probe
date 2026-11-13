@@ -53,23 +53,3 @@ func readCPURange(cpuRangeStr string) ([]int, error) {
 	}
 	return cpus, nil
 }
-
-// Constants matching <linux/perf_event.h>
-const (
-	// Cache IDs
-	PerfHWCacheL1D = 0 // L1 Data
-	PerfHWCacheLLC = 2 // Last Level Cache (L3)
-
-	// Cache Operations
-	PerfHWCacheOpRead  = 0
-	PerfHWCacheOpWrite = 1
-
-	// Cache Results
-	PerfHWCacheResultAccess = 0 // Total references/accesses
-	PerfHWCacheResultMiss   = 1 // Misses
-)
-
-// Helper to calculate the packed config value
-func makeCacheConfig(cache, op, result uint64) uint64 {
-	return cache | (op << 8) | (result << 16)
-}

@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"unsafe"
 
 	cebpf "github.com/cilium/ebpf"
 	"github.com/elastic/go-perf"
@@ -24,21 +23,19 @@ var (
 	_ tracer.Probe             = (*memcacheProbe)(nil)
 )
 
-type Config struct{}
-
-// Validate implements confmap.Validator.
-func (c *Config) Validate() error {
-	return nil
-}
-
-type memcacheProbe struct {
+type eventProbe struct {
 	coll   *cebpf.Collection
 	ref    *tracer.CollectTrampolineRef
 	events []*perf.Event
 }
 
+type memcacheProbe struct {
+	cfg    *Config
+	probes []*eventProbe
+}
+
 func (mc *memcacheProbe) Probe() tracer.Probe {
-	return &memcacheProbe{}
+	return &memcacheProbe{cfg: mc.cfg}
 }
 
 func (mc *memcacheProbe) Start(_ context.Context, _ component.Host) error {
@@ -58,15 +55,44 @@ func (mc *memcacheProbe) Load(ctx context.Context, reg tracer.ProbeRegistrar, pr
 		}
 	}()
 
+	cpus, err := getOnlineCPUIDs()
+	if err != nil {
+		return err
+	}
+
+	sample, freq := mc.cfg.sampling()
+	attr := perf.Attr{
+		Type:   perf.HardwareCacheEvent,
+		Sample: sample,
+		Options: perf.Options{
+			Disabled:      true,
+			ExcludeKernel: true,
+			Freq:          freq,
+		},
+	}
+	for _, ev := range mc.cfg.cacheEvents() {
+		ep := &eventProbe{}
+		// Track the event right away so Unload releases it on any failure.
+		mc.probes = append(mc.probes, ep)
+
+		if err := ep.load(probeCtx, ev, attr, cpus); err != nil {
+			return fmt.Errorf("event %s: %w", ev.name, err)
+		}
+	}
+
+	return nil
+}
+
+func (ep *eventProbe) load(probeCtx *tracer.ProbeContext, ev cacheEvent, attr perf.Attr, cpus []int) error {
 	ref, err := probeCtx.RegisterCollectTrampoline(&samples.TypeMetadata{
-		SampleTypes:  []samples.SampleType{{Type: "events", Unit: "count"}},
+		SampleTypes:  []samples.SampleType{{Type: ev.name, Unit: "count"}},
 		ReportValues: true,
 		AppendValues: samples.AppendFirstContextValue,
 	}, tracer.ProbePerfEvent)
 	if err != nil {
 		return err
 	}
-	mc.ref = ref
+	ep.ref = ref
 
 	spec, err := loadMemcache()
 	if err != nil {
@@ -93,46 +119,23 @@ func (mc *memcacheProbe) Load(ctx context.Context, reg tracer.ProbeRegistrar, pr
 	if err != nil {
 		return err
 	}
-	mc.coll = coll
+	ep.coll = coll
 
-	cpus, err := getOnlineCPUIDs()
-	if err != nil {
-		return err
-	}
+	attr.Config = ev.config
 
-	attr := &perf.Attr{
-		Type:   perf.HardwareCacheEvent,
-		Config: makeCacheConfig(PerfHWCacheL1D, PerfHWCacheOpRead, PerfHWCacheResultMiss),
-		Sample: 4096 << 8,
-		Options: perf.Options{
-			Disabled:      true,
-			ExcludeKernel: true,
-		},
-	}
-
-	eventsMap := coll.Maps[memcacheMapL1dReadMiss]
 	prog := coll.Programs[memcacheProgReadPerfEventHook]
 	progFD := uint32(prog.FD())
 
 	for _, cpu := range cpus {
-		perfEvent, err := perf.Open(attr, perf.AllThreads, cpu, nil)
+		perfEvent, err := perf.Open(&attr, perf.AllThreads, cpu, nil)
 		if err != nil {
 			return fmt.Errorf("failed to open perf event on CPU %d: %w", cpu, err)
 		}
-		// Track the event right away so Unload closes it on any later failure.
-		mc.events = append(mc.events, perfEvent)
+		// Track the event right away so close releases it on any later failure.
+		ep.events = append(ep.events, perfEvent)
 
 		if err := perfEvent.SetBPF(progFD); err != nil {
 			return fmt.Errorf("failed to attach eBPF program to perf event: %w", err)
-		}
-
-		eventFD, err := perfEvent.FD()
-		if err != nil {
-			return fmt.Errorf("getting FD failed: %w", err)
-		}
-
-		if err := eventsMap.Update(unsafe.Pointer(&cpu), unsafe.Pointer(&eventFD), cebpf.UpdateAny); err != nil {
-			return fmt.Errorf("map update failed: %w", err)
 		}
 
 		if err := perfEvent.Enable(); err != nil {
@@ -143,22 +146,32 @@ func (mc *memcacheProbe) Load(ctx context.Context, reg tracer.ProbeRegistrar, pr
 	return nil
 }
 
-func (mc *memcacheProbe) Unload() error {
-	for _, ev := range mc.events {
+func (ep *eventProbe) close() error {
+	for _, ev := range ep.events {
 		ev.Disable()
 		ev.Close()
 	}
-	mc.events = nil
+	ep.events = nil
 
-	if mc.coll != nil {
-		mc.coll.Close()
-		mc.coll = nil
+	if ep.coll != nil {
+		ep.coll.Close()
+		ep.coll = nil
 	}
-	if mc.ref != nil {
-		err := mc.ref.Close()
-		mc.ref = nil
+	if ep.ref != nil {
+		err := ep.ref.Close()
+		ep.ref = nil
 		return err
 	}
 
 	return nil
+}
+
+func (mc *memcacheProbe) Unload() error {
+	var errs []error
+	for _, ep := range mc.probes {
+		errs = append(errs, ep.close())
+	}
+	mc.probes = nil
+
+	return errors.Join(errs...)
 }

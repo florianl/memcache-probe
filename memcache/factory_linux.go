@@ -12,12 +12,12 @@ import (
 func NewFactory() extension.Factory {
 	return extension.NewFactory(
 		Type,
-		func() component.Config { return &Config{} },
+		func() component.Config { return createDefaultConfig() },
 		createExtension,
 		stability,
 	)
 }
 
 func createExtension(_ context.Context, _ extension.Settings, cfg component.Config) (extension.Extension, error) {
-	return &memcacheProbe{}, nil
+	return &memcacheProbe{cfg: cfg.(*Config)}, nil
 }
